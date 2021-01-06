@@ -16,16 +16,16 @@ enum MatchResult {
   REJECT_STOP,
 }
 
-export class Parser<T> {
+export class Parser<T_Element, T_Terminal> {
 
-  static fromSourceArray<K>(array: SourceArray<K>) {
-    return new Parser<K>(array);
+  static fromSourceArray<T_Element, T_Terminal>(array: SourceArray<T_Element, T_Terminal>) {
+    return new Parser<T_Element, T_Terminal>(array);
   }
 
-  private array: SourceArray<T>;
-  private metaMatch: Map<MetaType, (context: Stack, elem: T) => MatchResult>;
+  private array: SourceArray<T_Element, T_Terminal>;
+  private metaMatch: Map<MetaType, (context: Stack, elem: T_Element) => MatchResult>;
 
-  constructor(array: SourceArray<T>) {
+  constructor(array: SourceArray<T_Element, T_Terminal>) {
     this.array = array;
     this.metaMatch = new Map();
     this.metaMatch.set(MetaType.GROUPING, this.matchGrouping);
@@ -112,36 +112,22 @@ export class Parser<T> {
     return this.stopFlag;
   }
 
-  private matchStr(context: Stack, elem: T): MatchResult {
-    const metaStr = context.meta as string;
+  private matchStr(context: Stack, elem: T_Element): MatchResult {
     let state: {
       index: number;
+      terminals: T_Terminal[];
     } = context.state;
     if (state == null) {
       state = {
-        index: 0
+        index: 0,
+        terminals: this.array.split(context.meta as string),
       };
       context.state = state;
     }
-    let char = metaStr[state.index];
-    if (char === '\\') {
-      let next = metaStr[state.index + 1];
-      switch(next) {
-        case '\\': {
-          char = '\\';
-        } break;
-        case '"': {
-          char = '"';
-        } break;
-        default: {
-          char += next;
-        }
-      }
-      state.index++;
-    }
+    const term = state.terminals[state.index];
     state.index++;
-    if (this.array.match(char, elem)) {
-      if (state.index >= metaStr.length) {
+    if (this.array.match(term, elem)) {
+      if (state.index >= state.terminals.length) {
         return MatchResult.ACCEPT_COMPLETE;
       } else {
         return MatchResult.ACCEPT;

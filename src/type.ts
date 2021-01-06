@@ -1,13 +1,14 @@
 
-export abstract class SourceArray<T> {
-  abstract elementAt(pos: number): T;
+export abstract class SourceArray<T_Element, T_Terminal> {
+  abstract split(terminal: string): T_Terminal[];
+  abstract match(char: T_Terminal, elem: T_Element): boolean;
+  abstract elementAt(pos: number): T_Element;
   abstract size(): number;
-  abstract match(char: string, elem: T): boolean;
   abstract position(pos: number): string;
-  abstract display(elem: T): string;
+  abstract display(elem: T_Element): string;
 }
 
-export class StringArray extends SourceArray<string> {
+export class StringArray extends SourceArray<string, string> {
 
   private source: string;
 
@@ -16,17 +17,41 @@ export class StringArray extends SourceArray<string> {
     this.source = source;
   }
 
-  elementAt(index) {
-    return this.source[index];
+  split(terminal: string): string[] {
+    const ret: string[] = [];
+    for (let i=0; i<terminal.length; ++i) {
+      let ch = terminal[i];
+      if (ch === '\\' && i < terminal.length - 1) {
+        let next = terminal[i + 1];
+        switch (next) {
+          case '\\': {
+            ch = '\\';
+          } break;
+          case '"': {
+            ch = '"';
+          } break;
+          default: {
+            ch += next;
+          }
+        }
+        i++;
+      }
+      ret.push(ch);
+    }
+    return ret;
   }
 
-  size() {
-    return this.source.length;
-  }
-
-  match(terminal, element) {
+  match(char: string, elem: string) {
     // todo:
     return true;
+  }
+
+  elementAt(pos: number): string {
+    return this.source[pos];
+  }
+
+  size(): number {
+    return this.source.length;
   }
 
   position(index) {
