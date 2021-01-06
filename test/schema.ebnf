@@ -1,0 +1,12 @@
+ENTRY = { rule | comment };
+p = " " | "\t" | "\n";
+comment = "//", {"\c"};
+rule = {p}, name, {p}, "=", list, ";", {p}, [comment];
+name = "\a", { "\w" };
+list = item | ( { item, "," }, item );
+item = {p}, name | term | group | alter | option | repeat, {p};
+term = "\"", "\S", {"\S"} ,"\"";
+group = "(", {p}, list, {p}, ")";
+alter = item, {p}, "|", {p}, item;
+option = "[", {p}, list, {p}, "]";
+repeat = "{", {p}, list, {p}, "}";

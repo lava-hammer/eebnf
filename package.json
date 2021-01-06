@@ -1,0 +1,8 @@
+{
+  "name": "eebnf",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:lava-hammer/eebnf.git",
+  "author": "hammer <lava_hammer@163.com>",
+  "license": "MIT"
+}
