@@ -24,28 +24,35 @@ function A(label: string) {
 function OR(...item: MetaVal[]): Meta {
   return {
     type: MetaType.ALTERNATION,
-    value: [...item],
+    value: item,
   };
 }
 
 function EX(...item: MetaVal[]): Meta {
-  return {
-    type: MetaType.OPTIONAL,
-    value: [...item],
-  };
+  if (item.length > 1) {
+    return {
+      type: MetaType.OPTIONAL,
+      value: [IN(...item)],
+    };
+  } else {
+    return {
+      type: MetaType.OPTIONAL,
+      value: item,
+    };
+  }
 }
 
 function LOOP(...item: MetaVal[]): Meta {
   return {
     type: MetaType.REPETITION,
-    value: [...item],
+    value: item,
   };
 }
 
 function IN(...item: MetaVal[]): Meta {
   return {
     type: MetaType.GROUPING,
-    value: [...item],
+    value: item,
   };
 }
 
@@ -54,7 +61,7 @@ export type Schema = { [key: string]: Meta };
 export const eebnfSchema: Schema = {
   ENTRY: IN(LOOP(OR(A('rule'), A('comment')))),
   p: IN(' ', '\t', '\n'),
-  comment: IN('//', LOOP('\\c')),
+  comment: IN('//', LOOP('\\N')),
   rule: IN(A('p'), A('name'), A('p'), '=', A('list'), ';', A('p'), EX('comment')),
   name: IN('\\a', LOOP('\\w')),
   list: IN(OR(A('item'), IN(LOOP(A('item'), ','), A('item')))),

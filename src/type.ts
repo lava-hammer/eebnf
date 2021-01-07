@@ -1,20 +1,51 @@
 
-export abstract class SourceArray<T_Element, T_Terminal> {
-  abstract split(terminal: string): T_Terminal[];
-  abstract match(char: T_Terminal, elem: T_Element): boolean;
-  abstract elementAt(pos: number): T_Element;
-  abstract size(): number;
-  abstract position(pos: number): string;
-  abstract display(elem: T_Element): string;
+export interface SNode<T> {
+  parent?: SNode<T>;
+  label: string;
+  source?: T[];
+  children?: SNode<T>[];
+  posBegin?: string;
+  posEnd?: string;
 }
 
-export class StringArray extends SourceArray<string, string> {
+export interface AST<T> {
+  root: SNode<T>;
+  errors: string[];
+}
+
+export abstract class SourceArray<T> {
+  abstract split(terminal: string): T[];
+  abstract match(char: T, elem: T): boolean;
+  abstract elementAt(pos: number): T;
+  abstract size(): number;
+  abstract position(pos: number): string;
+  abstract display(elem: T): string;
+}
+
+const listA = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_';
+const listW = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_';
+const listD = '0123456789';
+const listS = '\f\n\r\t\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff';
+
+export class StringArray extends SourceArray<string> {
 
   private source: string;
+  private linePos: number[];
 
   constructor(source: string) {
     super();
-    this.source = source;
+    // normalize
+    const text = this.replaceAll(source, '\r\n', '\n');
+    this.source = this.replaceAll(text, '\r', '\n');
+    const lines = this.source.split('\n');
+    this.linePos.push(0);
+    for (let ln of lines) {
+      this.linePos.push(this.linePos[this.linePos.length - 1] + ln.length);
+    }
+  }
+
+  private replaceAll(str: string, src: string, dst: string): string {
+    return str.split(src).join(dst);
   }
 
   split(terminal: string): string[] {
@@ -41,9 +72,21 @@ export class StringArray extends SourceArray<string, string> {
     return ret;
   }
 
-  match(char: string, elem: string) {
-    // todo:
-    return true;
+  match(term: string, elem: string): boolean {
+    switch(term) {
+      case '\\t': return elem === '\t';
+      case '\\n': return elem === '\n';
+      case '\\N': return elem !== '\n';
+      case '\\a': return listA.includes(elem);
+      case '\\A': return !listA.includes(elem);
+      case '\\w': return listW.includes(elem);
+      case '\\W': return !listW.includes(elem);
+      case '\\s': return listS.includes(elem);
+      case '\\S': return !listS.includes(elem);
+      case '\\d': return listD.includes(elem);
+      case '\\D': return !listD.includes(elem);
+      default: return term === elem;
+    }
   }
 
   elementAt(pos: number): string {
@@ -55,7 +98,17 @@ export class StringArray extends SourceArray<string, string> {
   }
 
   position(index) {
-    return '';
+    let line = 0;
+    let column = 0;
+    for (let ln=0; ln<this.linePos.length; ++ln) {
+      if (index >= this.linePos[ln]) {
+        line = ln+1;
+        column = index - this.linePos[ln] + 1;
+      } else {
+        break;
+      }
+    }
+    return `${line}:${column}`;
   }
 
   display(elem) {

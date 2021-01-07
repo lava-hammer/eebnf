@@ -1,31 +1,77 @@
-import { SourceArray } from './type';
-import { eebnfSchema, MetaType, MetaVal } from './schema';
+import { AST, SNode, SourceArray } from './type';
+import { eebnfSchema, MetaType, MetaVal, Meta } from './schema';
 
-interface Stack {
+interface Stack<T> {
   meta: MetaVal;
   state: any;
-  result: MatchResult;
+  result: MatchResult<T>;
   pos: number;
 }
 
-enum MatchResult {
-  UNKNOWN = 0,
+enum MatchCode {
+  NONE = 0,
   ACCEPT,
-  ACCEPT_COMPLETE,
   REJECT,
-  REJECT_STOP,
 }
 
-export class Parser<T_Element, T_Terminal> {
+interface MatchResult<T> {
+  code: MatchCode;
+  complete: SNode<T> | null;
+  stop?: boolean;
+}
 
-  static fromSourceArray<T_Element, T_Terminal>(array: SourceArray<T_Element, T_Terminal>) {
-    return new Parser<T_Element, T_Terminal>(array);
+function accept<T>(): MatchResult<T> {
+  return {
+    code: MatchCode.ACCEPT,
+    complete: null,
+  };
+}
+
+function acceptComplete<T>(node: SNode<T>): MatchResult<T> {
+  return {
+    code: MatchCode.ACCEPT,
+    complete: node,
+  };
+}
+
+function none<T>(): MatchResult<T> {
+  return {
+    code: MatchCode.NONE,
+    complete: null,
+  };
+}
+
+function noneComplete<T>(node: SNode<T>): MatchResult<T> {
+  return {
+    code: MatchCode.NONE,
+    complete: node,
+  };
+}
+
+function reject<T>(): MatchResult<T> {
+  return {
+    code: MatchCode.REJECT,
+    complete: null,
+  };
+}
+
+function rejectComplete<T>(node: SNode<T>): MatchResult<T> {
+  return {
+    code: MatchCode.REJECT,
+    complete: node,
+  };
+}
+
+export class Parser<T> {
+
+  static fromSourceArray<T>(array: SourceArray<T>) {
+    return new Parser<T>(array);
   }
 
-  private array: SourceArray<T_Element, T_Terminal>;
-  private metaMatch: Map<MetaType, (context: Stack, elem: T_Element) => MatchResult>;
+  private array: SourceArray<T>;
+  private metaMatch: Map<MetaType, (context: Stack<T>, elem: T) => MatchResult<T>>;
 
-  constructor(array: SourceArray<T_Element, T_Terminal>) {
+  constructor(array: SourceArray<T>) {
     this.array = array;
     this.metaMatch = new Map();
     this.metaMatch.set(MetaType.GROUPING, this.matchGrouping);
@@ -37,19 +83,19 @@ export class Parser<T_Element, T_Terminal> {
 
   private out: string[];
   private pos: number;
-  private stack: Stack[];
+  private stack: Stack<T>[];
   private stopFlag: boolean;
 
-  private push(meta: MetaVal, pos: number) {
+  private pushMeta(meta: MetaVal, pos: number) {
     this.stack.push({
       meta,
       pos,
       state: null,
-      result: MatchResult.UNKNOWN,
+      result: null,
     });
   }
 
-  private pop(result: MatchResult) {
+  private popMeta(result: MatchResult<T>) {
     this.stack.pop();
     const top = this.peek();
     if (top) {
@@ -57,7 +103,7 @@ export class Parser<T_Element, T_Terminal> {
     }
   }
 
-  private peek(): Stack | undefined {
+  private peek(): Stack<T> | undefined {
     if (this.stack.length > 0) {
       return this.stack[this.stack.length - 1];
     } else {
@@ -74,7 +120,7 @@ export class Parser<T_Element, T_Terminal> {
     this.pos = -1;
     this.stack = [];
     this.stopFlag = false;
-    this.push(eebnfSchema['ENTRY'], 0);
+    this.pushMeta(eebnfSchema['ENTRY'], 0);
   }
 
   step(): boolean {
@@ -82,29 +128,33 @@ export class Parser<T_Element, T_Terminal> {
     const elem = this.array.elementAt(this.pos);
     const stack = this.peek();
     if (stack) {
-      let result = MatchResult.UNKNOWN;
+      let result: MatchResult<T> = null;
       if (typeof stack.meta === 'string') {
         result = this.matchStr(stack, elem);
       } else {
         result = this.metaMatch.get(stack.meta.type).call(this, stack, elem);
       }
-      switch(result) {
-        case MatchResult.ACCEPT: {
-          // do nothing
-        } break;
-        case MatchResult.ACCEPT_COMPLETE: {
-          this.pop(result);
-        } break;
-        case MatchResult.REJECT: {
-          this.pos = stack.pos - 1;
-          this.pop(result);
-        } break;
-        case MatchResult.REJECT_STOP: {
+      if (result) {
+        switch(result.code) {
+          case MatchCode.NONE: {
+            this.pos--;
+          } break;
+          case MatchCode.ACCEPT: {
+            // do nothing now
+          } break;
+          case MatchCode.REJECT: {
+            this.pos = stack.pos - 1;
+            this.popMeta(result);
+          } break;
+        }
+        if (result.complete) {
+          this.popMeta(result);
+        }
+        if (result.stop) {
           this.stopFlag = true;
-        } break;
-        default: {
-          this.error('internal: match result is unknown');
-        } break;
+        }
+      } else {
+        this.error('internal: match result is unknown');
       }
     } else {
       this.error(`expected file ending, got: ${this.array.display(elem)}`);
@@ -112,48 +162,178 @@ export class Parser<T_Element, T_Terminal> {
     return this.stopFlag;
   }
 
-  private matchStr(context: Stack, elem: T_Element): MatchResult {
+  finish(): AST<T> {
+    return null;
+  }
+
+  exec(): AST<T> {
+    this.init();
+    while(this.stopFlag) {
+      this.step();
+    }
+    return this.finish();
+  }
+
+  private matchStr(context: Stack<T>, elem: T): MatchResult<T> {
     let state: {
       index: number;
-      terminals: T_Terminal[];
+      terms: T[];
+      source: T[];
     } = context.state;
     if (state == null) {
       state = {
         index: 0,
-        terminals: this.array.split(context.meta as string),
+        terms: this.array.split(context.meta as string),
+        source: [],
       };
       context.state = state;
     }
-    const term = state.terminals[state.index];
+    const term = state.terms[state.index];
     state.index++;
     if (this.array.match(term, elem)) {
-      if (state.index >= state.terminals.length) {
-        return MatchResult.ACCEPT_COMPLETE;
+      state.source.push(elem);
+      if (state.index >= state.terms.length) {
+        return acceptComplete({
+          label: this.array.display(term),
+          source: state.source, 
+        });
       } else {
-        return MatchResult.ACCEPT;
+        return accept();
       }
     } else {
-      return MatchResult.REJECT;
+      return reject();
     }
   }
 
-  private matchNonTerminal(context: Stack, elem: T): MatchResult {
-    // todo:
+  private matchNonTerminal(context: Stack<T>, elem: T): MatchResult<T> {
+    let state: boolean = context.state;
+    const nterm = (context.meta as Meta).value as string;
+    if (state == null) {
+      state = true;
+      let newMeta = eebnfSchema[nterm];
+      this.pushMeta(newMeta, this.pos);
+      return none();
+    } else {
+      if (context.result.complete) {
+        return noneComplete({
+          label: nterm,
+          children: [context.result.complete],
+        });
+      }
+      return context.result;
+    }
   }
 
-  private matchAlternation(context: Stack, elem: T): MatchResult {
-    // todo:
+  private matchAlternation(context: Stack<T>, elem: T): MatchResult<T> {
+    let state: {
+      index: number;
+    } = context.state;
+    const metaVals = (context.meta as Meta).value as MetaVal[];
+    if (state == null) {
+      state = {
+        index: 0,
+      };
+      context.state = state;
+      this.pushMeta(metaVals[0], this.pos);
+      state.index++;
+      return none();
+    } else {
+      if (context.result.complete) {
+        return acceptComplete(context.result.complete);
+      } else {
+        if (state.index < metaVals.length) {
+          let nextMeta = metaVals[state.index];
+          this.pushMeta(nextMeta, this.pos);
+          state.index++;
+          return none();
+        } else {
+          return reject();
+        }
+      }
+    }
   }
 
-  private matchOptional(context: Stack, elem: T): MatchResult {
-    // todo:
+  private matchOptional(context: Stack<T>, elem: T): MatchResult<T> {
+    let state: boolean = context.state;
+    const metaVals = (context.meta as Meta).value as MetaVal[];
+    if (state == null) {
+      state = true;
+      context.state = state;
+      this.pushMeta(metaVals[0], this.pos);
+      return none();
+    } else {
+      if (context.result.complete) {
+        return noneComplete(context.result.complete);
+      } else {
+        return context.result;
+      }
+    }
   }
 
-  private matchRepetition(context: Stack, elem: T): MatchResult {
-    // todo:
+  private matchRepetition(context: Stack<T>, elem: T): MatchResult<T> {
+    let state: {
+      children: SNode<T>[];
+    } = context.state;
+    const metaVals = (context.meta as Meta).value as MetaVal[];
+    if (state == null) {
+      state = {
+        children: [],
+      };
+      context.state = state;
+      this.pushMeta(metaVals[0], this.pos);
+      return none();
+    } else {
+      if (context.result.complete) {
+        state.children.push(context.result.complete);
+      }
+      if (context.result.code === MatchCode.REJECT) {
+        if (state.children.length > 0) {
+          return rejectComplete({
+            label: 'repetition',
+            children: state.children,
+          });
+        }
+      } else {
+        this.pushMeta(metaVals[0], this.pos);
+        return none();
+      }
+    }
   }
 
-  private matchGrouping(context: Stack, elem: T): MatchResult {
-    // todo:
+  private matchGrouping(context: Stack<T>, elem: T): MatchResult<T> {
+    let state: {
+      index: number;
+      children: SNode<T>[];
+    } = context.state;
+    const metaVals = (context.meta as Meta).value as MetaVal[];
+    if (state == null) {
+      state = {
+        index: 0,
+        children: [],
+      };
+      context.state = state;
+      this.pushMeta(metaVals[0], this.pos);
+      state.index++;
+      return none();
+    } else {
+      if (context.result.complete) {
+        state.children.push(context.result.complete);
+      }
+      if (context.result.code !== MatchCode.REJECT) {
+        if (state.index < metaVals.length) {
+          let nextMeta = metaVals[state.index];
+          this.pushMeta(nextMeta, this.pos);
+          state.index++;
+          return none();
+        } else {
+          return acceptComplete({
+            label: 'grouping',
+            children: state.children,
+          });
+        }
+      } else {
+        return reject();
+      }
+    }
   }
 }
