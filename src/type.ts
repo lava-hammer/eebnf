@@ -38,6 +38,7 @@ export class StringArray extends SourceArray<string> {
     const text = this.replaceAll(source, '\r\n', '\n');
     this.source = this.replaceAll(text, '\r', '\n');
     const lines = this.source.split('\n');
+    this.linePos = [];
     this.linePos.push(0);
     for (let ln of lines) {
       this.linePos.push(this.linePos[this.linePos.length - 1] + ln.length);

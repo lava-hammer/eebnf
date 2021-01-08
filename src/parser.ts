@@ -125,6 +125,10 @@ export class Parser<T> {
 
   step(): boolean {
     this.pos++;
+    if (this.pos >= this.array.size()) {
+      this.stopFlag = true;
+      return this.stopFlag;
+    }
     const elem = this.array.elementAt(this.pos);
     const stack = this.peek();
     if (stack) {
@@ -135,6 +139,7 @@ export class Parser<T> {
         result = this.metaMatch.get(stack.meta.type).call(this, stack, elem);
       }
       if (result) {
+        console.log(`${this.pos}: ${elem} ==> ${strMetaVal(stack.meta)} ==> ${strResult(result)}`)
         switch(result.code) {
           case MatchCode.NONE: {
             this.pos--;
@@ -168,7 +173,7 @@ export class Parser<T> {
 
   exec(): AST<T> {
     this.init();
-    while(this.stopFlag) {
+    while(!this.stopFlag) {
       this.step();
     }
     return this.finish();
@@ -209,7 +214,7 @@ export class Parser<T> {
     let state: boolean = context.state;
     const nterm = (context.meta as Meta).value as string;
     if (state == null) {
-      state = true;
+      context.state = true;
       let newMeta = eebnfSchema[nterm];
       this.pushMeta(newMeta, this.pos);
       return none();
@@ -265,7 +270,7 @@ export class Parser<T> {
       if (context.result.complete) {
         return noneComplete(context.result.complete);
       } else {
-        return context.result;
+        return none();
       }
     }
   }
@@ -335,5 +340,29 @@ export class Parser<T> {
         return reject();
       }
     }
+  }
+}
+
+// debug code
+function strMetaVal(meta: MetaVal): string {
+  if (typeof meta === 'string') {
+    return `"${meta}"`;
+  } else {
+    let children: string;
+    if (Array.isArray(meta.value)) {
+      let chs = meta.value.map(e => `[${strMetaVal(e)}]`);
+      children = chs.join(',');
+    } else {
+      return strMetaVal(meta.value);
+    }
+    return `${MetaType[meta.type]}={${children}}`;
+  }
+}
+
+function strResult<T>(res: MatchResult<T>): string {
+  if (res) {
+    return `{${MatchCode[res.code]}:${JSON.stringify(res.complete)}}`
+  } else {
+    return 'null';
   }
 }
