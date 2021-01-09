@@ -43,10 +43,17 @@ function EX(...item: MetaVal[]): Meta {
 }
 
 function LOOP(...item: MetaVal[]): Meta {
-  return {
-    type: MetaType.REPETITION,
-    value: item,
-  };
+  if (item.length > 1) {
+    return {
+      type: MetaType.REPETITION,
+      value: [IN(...item)],
+    };
+  } else {
+    return {
+      type: MetaType.REPETITION,
+      value: item,
+    }
+  }
 }
 
 function IN(...item: MetaVal[]): Meta {

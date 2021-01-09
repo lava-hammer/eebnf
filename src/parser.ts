@@ -139,6 +139,7 @@ export class Parser<T> {
     const stack = this.peek();
     if (stack) {
       let result: MatchResult<T> = null;
+      console.log(`@ [${strNontermStack(this.stack)}]`);
       console.log(`[${this.stepCount}] ${this.pos}: ${elem} ==> ${strMetaVal(stack.meta)}`);
       if (typeof stack.meta === 'string') {
         result = this.matchStr(stack, elem);
@@ -387,4 +388,14 @@ function strMetaVal(meta: MetaVal): string {
 
 function strResult<T>(res: MatchResult<T>): string {
   return `{${res.accept ? 'ACCEPT' : 'REJECT'}|${Flow[res.flow]}|${JSON.stringify(res.return)}}`;
+}
+
+function strNontermStack<T>(stack: Stack<T>[]) {
+  const list = [];
+  for (let st of stack) {
+    if (typeof st.meta === 'object' && st.meta.type === MetaType.NONTERMINAL) {
+      list.push(`${st.meta.value}(${st.pos})`);
+    }
+  }
+  return list.join(' > ');
 }
