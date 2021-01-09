@@ -8,58 +8,53 @@ interface Stack<T> {
   pos: number;
 }
 
-enum MatchCode {
-  NONE = 0,
-  ACCEPT,
-  REJECT,
+enum Flow {
+  CONTINUE,
+  RETURN,
+  BACK,
 }
 
 interface MatchResult<T> {
-  code: MatchCode;
-  complete: SNode<T> | null;
-  stop?: boolean;
+  accept: boolean;
+  flow: Flow;
+  return?: SNode<T>;
 }
 
-function accept<T>(): MatchResult<T> {
+function acceptReturn<T>(ret: SNode<T>) {
   return {
-    code: MatchCode.ACCEPT,
-    complete: null,
-  };
+    accept: true,
+    flow: Flow.RETURN,
+    return: ret,
+  }
 }
 
-function acceptComplete<T>(node: SNode<T>): MatchResult<T> {
+function acceptContinue() {
   return {
-    code: MatchCode.ACCEPT,
-    complete: node,
-  };
+    accept: true,
+    flow: Flow.CONTINUE,
+  }
 }
 
-function none<T>(): MatchResult<T> {
+function rejectReturn<T>(ret: SNode<T>) {
   return {
-    code: MatchCode.NONE,
-    complete: null,
-  };
+    accept: false,
+    flow: Flow.RETURN,
+    return: ret,
+  }
 }
 
-function noneComplete<T>(node: SNode<T>): MatchResult<T> {
+function rejectBack() {
   return {
-    code: MatchCode.NONE,
-    complete: node,
-  };
+    accept: false,
+    flow: Flow.BACK,
+  }
 }
 
-function reject<T>(): MatchResult<T> {
+function newStack() {
   return {
-    code: MatchCode.REJECT,
-    complete: null,
-  };
-}
-
-function rejectComplete<T>(node: SNode<T>): MatchResult<T> {
-  return {
-    code: MatchCode.REJECT,
-    complete: node,
-  };
+    accept: false,
+    flow: Flow.CONTINUE,
+  }
 }
 
 export class Parser<T> {
@@ -85,8 +80,10 @@ export class Parser<T> {
   private pos: number;
   private stack: Stack<T>[];
   private stopFlag: boolean;
+  private stepCount: number;
 
   private pushMeta(meta: MetaVal, pos: number) {
+    console.log(`=== PUSH META=${strMetaVal(meta)}`);
     this.stack.push({
       meta,
       pos,
@@ -111,8 +108,15 @@ export class Parser<T> {
     }
   }
 
-  private error(str: string) {
-    this.out.push(`[error] ${str} @ ${this.array.position(this.pos)}`);
+  private error(str: string, isSchema?: boolean) {
+    let msg: string;
+    if (isSchema) {
+      msg = `[schema error] ${str}`;
+    } else {
+      msg = `[error] ${str} @ ${this.array.position(this.pos)}`;
+    }
+    console.log(msg);
+    this.out.push(msg);
   }
 
   init() {
@@ -120,10 +124,12 @@ export class Parser<T> {
     this.pos = -1;
     this.stack = [];
     this.stopFlag = false;
+    this.stepCount = 0;
     this.pushMeta(eebnfSchema['ENTRY'], 0);
   }
 
   step(): boolean {
+    this.stepCount++;
     this.pos++;
     if (this.pos >= this.array.size()) {
       this.stopFlag = true;
@@ -133,30 +139,28 @@ export class Parser<T> {
     const stack = this.peek();
     if (stack) {
       let result: MatchResult<T> = null;
+      console.log(`[${this.stepCount}] ${this.pos}: ${elem} ==> ${strMetaVal(stack.meta)}`);
       if (typeof stack.meta === 'string') {
         result = this.matchStr(stack, elem);
       } else {
         result = this.metaMatch.get(stack.meta.type).call(this, stack, elem);
       }
       if (result) {
-        console.log(`${this.pos}: ${elem} ==> ${strMetaVal(stack.meta)} ==> ${strResult(result)}`)
-        switch(result.code) {
-          case MatchCode.NONE: {
-            this.pos--;
+        console.log(`>>> ${strResult(result)}`)
+        if (!result.accept) {
+          this.pos--;
+        }
+        switch(result.flow) {
+          case Flow.CONTINUE: {
+            // do nothing
           } break;
-          case MatchCode.ACCEPT: {
-            // do nothing now
+          case Flow.RETURN: {
+            this.popMeta(result);
           } break;
-          case MatchCode.REJECT: {
+          case Flow.BACK: {
             this.pos = stack.pos - 1;
             this.popMeta(result);
           } break;
-        }
-        if (result.complete) {
-          this.popMeta(result);
-        }
-        if (result.stop) {
-          this.stopFlag = true;
         }
       } else {
         this.error('internal: match result is unknown');
@@ -179,13 +183,28 @@ export class Parser<T> {
     return this.finish();
   }
 
+  private lookUpStack(ntermName: string, pos: number): boolean {
+    for (let i=this.stack.length-2; --i; i>=0) {
+      const stack = this.stack[i];
+      if (
+        stack.pos === pos 
+        && typeof stack.meta === 'object' 
+        && stack.meta.type === MetaType.NONTERMINAL 
+        && stack.meta.value === ntermName
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private matchStr(context: Stack<T>, elem: T): MatchResult<T> {
     let state: {
       index: number;
       terms: T[];
       source: T[];
     } = context.state;
-    if (state == null) {
+    if (context.state == null) {
       state = {
         index: 0,
         terms: this.array.split(context.meta as string),
@@ -198,15 +217,15 @@ export class Parser<T> {
     if (this.array.match(term, elem)) {
       state.source.push(elem);
       if (state.index >= state.terms.length) {
-        return acceptComplete({
+        return acceptReturn({
           label: this.array.display(term),
           source: state.source, 
         });
       } else {
-        return accept();
+        return acceptContinue();
       }
     } else {
-      return reject();
+      return rejectBack();
     }
   }
 
@@ -214,18 +233,27 @@ export class Parser<T> {
     let state: boolean = context.state;
     const nterm = (context.meta as Meta).value as string;
     if (state == null) {
+      if (this.lookUpStack(nterm, context.pos)) {
+        return rejectBack();
+      }
       context.state = true;
       let newMeta = eebnfSchema[nterm];
-      this.pushMeta(newMeta, this.pos);
-      return none();
-    } else {
-      if (context.result.complete) {
-        return noneComplete({
-          label: nterm,
-          children: [context.result.complete],
-        });
+      if (newMeta == null) {
+        this.error(`non-terminal "${nterm}" is not defined.`, true);
+        this.stopFlag = true;
+        return rejectBack();
       }
-      return context.result;
+      this.pushMeta(newMeta, this.pos);
+      return newStack();
+    } else {
+      if (context.result.flow === Flow.RETURN) {
+        return rejectReturn({
+          label: nterm,
+          children: [context.result.return],
+        });
+      } else {
+        return rejectBack();
+      }
     }
   }
 
@@ -241,18 +269,18 @@ export class Parser<T> {
       context.state = state;
       this.pushMeta(metaVals[0], this.pos);
       state.index++;
-      return none();
+      return newStack();
     } else {
-      if (context.result.complete) {
-        return acceptComplete(context.result.complete);
+      if (context.result.flow === Flow.RETURN) {
+        return rejectReturn(context.result.return);
       } else {
         if (state.index < metaVals.length) {
           let nextMeta = metaVals[state.index];
           this.pushMeta(nextMeta, this.pos);
           state.index++;
-          return none();
+          return newStack();
         } else {
-          return reject();
+          return rejectBack();
         }
       }
     }
@@ -265,12 +293,12 @@ export class Parser<T> {
       state = true;
       context.state = state;
       this.pushMeta(metaVals[0], this.pos);
-      return none();
+      return newStack();
     } else {
-      if (context.result.complete) {
-        return noneComplete(context.result.complete);
+      if (context.result.flow === Flow.RETURN) {
+        return rejectReturn(context.result.return);
       } else {
-        return none();
+        return rejectReturn(null);
       }
     }
   }
@@ -286,21 +314,19 @@ export class Parser<T> {
       };
       context.state = state;
       this.pushMeta(metaVals[0], this.pos);
-      return none();
+      return newStack();
     } else {
-      if (context.result.complete) {
-        state.children.push(context.result.complete);
+      if (context.result.return) {
+        state.children.push(context.result.return);
       }
-      if (context.result.code === MatchCode.REJECT) {
-        if (state.children.length > 0) {
-          return rejectComplete({
-            label: 'repetition',
-            children: state.children,
-          });
-        }
+      if (context.result.flow === Flow.BACK) {
+        return rejectReturn({
+          label: 'repetition',
+          children: state.children,
+        });
       } else {
         this.pushMeta(metaVals[0], this.pos);
-        return none();
+        return newStack();
       }
     }
   }
@@ -319,25 +345,25 @@ export class Parser<T> {
       context.state = state;
       this.pushMeta(metaVals[0], this.pos);
       state.index++;
-      return none();
+      return newStack();
     } else {
-      if (context.result.complete) {
-        state.children.push(context.result.complete);
+      if (context.result.return) {
+        state.children.push(context.result.return);
       }
-      if (context.result.code !== MatchCode.REJECT) {
+      if (context.result.flow === Flow.RETURN) {
         if (state.index < metaVals.length) {
           let nextMeta = metaVals[state.index];
           this.pushMeta(nextMeta, this.pos);
           state.index++;
-          return none();
+          return newStack();
         } else {
-          return acceptComplete({
+          return acceptReturn({
             label: 'grouping',
             children: state.children,
           });
         }
       } else {
-        return reject();
+        return rejectBack();
       }
     }
   }
@@ -350,19 +376,15 @@ function strMetaVal(meta: MetaVal): string {
   } else {
     let children: string;
     if (Array.isArray(meta.value)) {
-      let chs = meta.value.map(e => `[${strMetaVal(e)}]`);
+      let chs = meta.value.map(e => `${strMetaVal(e)}`);
       children = chs.join(',');
     } else {
-      return strMetaVal(meta.value);
+      return `${MetaType[meta.type]}={${strMetaVal(meta.value)}}`;
     }
     return `${MetaType[meta.type]}={${children}}`;
   }
 }
 
 function strResult<T>(res: MatchResult<T>): string {
-  if (res) {
-    return `{${MatchCode[res.code]}:${JSON.stringify(res.complete)}}`
-  } else {
-    return 'null';
-  }
+  return `{${res.accept ? 'ACCEPT' : 'REJECT'}|${Flow[res.flow]}|${JSON.stringify(res.return)}}`;
 }
