@@ -6,39 +6,40 @@ export enum NFAStateType {
   NTERM_END,
 }
 
-export class NFAState {
-
-  addTermNext(term: string, next: NFAState) {
-    if (this.nextTerm == null) {
-      this.nextTerm = {};
-    }
-    this.nextTerm[term] = next;
-  }
-
-  addNtermNext(nterm: string, next: NFAState) {
-    if (this.nextNterm == null) {
-      this.nextNterm = {};
-    }
-    this.nextNterm[nterm] = next;
-  }
-
-  addNext(next: NFAState) {
-    if (this.next == null) {
-      this.next = [];
-    }
-    this.next.push(next);
-  }
-
-  next: NFAState[];
-  nextTerm: {[key: string]: NFAState};
-  nextNterm: {[key: string]: NFAState};
-
+enum TransType {
+  DIRECT,
+  TERMINAL,
+  NON_TERMINAL,
 }
 
-/** 内部转换时的辅助结构 */
-interface GenNode {
-  state: NFAState;
-  meta: Meta;
+interface Trans {
+  type: TransType,
+  text?: string;
+}
+
+export class NFAState {
+
+  private next: Map<Trans, NFAState>;
+
+  addTermNext(term: string, next: NFAState) {
+    this.next.set({
+      type: TransType.TERMINAL,
+      text: term,
+    }, next);
+  }
+
+  addNonTermNext(nterm: string, next: NFAState) {
+    this.next.set({
+      type: TransType.NON_TERMINAL,
+      text: nterm,
+    }, next);
+  }
+
+  addDirectNext(next: NFAState) {
+    this.next.set({
+      type: TransType.DIRECT,
+    }, next);
+  }
 }
 
 export function generateNFA(schema: Schema): {[key: string]: NFAState} {
@@ -55,37 +56,37 @@ export function genState(meta: MetaVal): NFAState[] {
   if (typeof meta === 'string') {
     const s = new NFAState();
     start.addTermNext(meta, s);
-    s.addNext(end);
+    s.addDirectNext(end);
   } else {
     switch(meta.type) {
       case MetaType.NONTERMINAL: {
-        start.addNtermNext(meta.value as string, end);
+        start.addNonTermNext(meta.value as string, end);
       } break;
       case MetaType.ALTERNATION: {
         for (let ch of meta.value as MetaVal[]) {
           const [s0, s1] = genState(ch);
-          start.addNext(s0);
-          s1.addNext(end);
+          start.addDirectNext(s0);
+          s1.addDirectNext(end);
         }
       } break;
       case MetaType.OPTIONAL: {
-        start.addNext(end);
+        start.addDirectNext(end);
         const [s0, s1] = genState(meta.value[0]);
-        start.addNext(s0);
-        s1.addNext(end);
+        start.addDirectNext(s0);
+        s1.addDirectNext(end);
       } break;
       case MetaType.REPETITION: {
         const [s0, s1] = genState(meta.value[0]);
-        start.addNext(s0);
-        start.addNext(end);
-        s1.addNext(end);
-        s1.addNext(s0);
+        start.addDirectNext(s0);
+        start.addDirectNext(end);
+        s1.addDirectNext(end);
+        s1.addDirectNext(s0);
       } break;
       case MetaType.GROUPING: {
         for (let ch of meta.value as MetaVal[]) {
           const [s0, s1] = genState(ch);
-          start.addNext(s0);
-          s1.addNext(end);
+          start.addDirectNext(s0);
+          s1.addDirectNext(end);
         }
       } break;
     }
