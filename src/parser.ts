@@ -1,5 +1,6 @@
 import { AST, SNode, SourceArray } from './type';
 import { eebnfSchema, MetaType, MetaVal, Meta } from './schema';
+import { SIGKILL } from 'constants';
 
 interface Stack<T> {
   meta: MetaVal;
@@ -139,15 +140,15 @@ export class Parser<T> {
     const stack = this.peek();
     if (stack) {
       let result: MatchResult<T> = null;
-      console.log(`@ [${strNontermStack(this.stack)}]`);
-      console.log(`[${this.stepCount}] ${this.pos}: ${elem} ==> ${strMetaVal(stack.meta)}`);
+      console.log(`\n@ [${strNontermStack(this.stack)}]`);
+      console.log(`[${this.stepCount}] ${this.pos}: [${elemContext(this.array, this.pos)}] ==> ${strMetaVal(stack.meta)}`);
       if (typeof stack.meta === 'string') {
         result = this.matchStr(stack, elem);
       } else {
         result = this.metaMatch.get(stack.meta.type).call(this, stack, elem);
       }
       if (result) {
-        console.log(`>>> ${strResult(result)}`)
+        console.log(`>>> ${strResult(this.array, result)}`)
         if (!result.accept) {
           this.pos--;
         }
@@ -168,6 +169,7 @@ export class Parser<T> {
       }
     } else {
       this.error(`expected file ending, got: ${this.array.display(elem)}`);
+      this.stopFlag = true;
     }
     return this.stopFlag;
   }
@@ -202,29 +204,21 @@ export class Parser<T> {
   private matchStr(context: Stack<T>, elem: T): MatchResult<T> {
     let state: {
       index: number;
-      terms: T[];
-      source: T[];
+      source: T;
     } = context.state;
     if (context.state == null) {
       state = {
         index: 0,
-        terms: this.array.split(context.meta as string),
-        source: [],
+        source: null,
       };
       context.state = state;
     }
-    const term = state.terms[state.index];
-    state.index++;
+    const term = context.meta as string;
     if (this.array.match(term, elem)) {
-      state.source.push(elem);
-      if (state.index >= state.terms.length) {
-        return acceptReturn({
-          label: this.array.display(term),
-          source: state.source, 
-        });
-      } else {
-        return acceptContinue();
-      }
+      return acceptReturn({
+        label: term,
+        source: elem, 
+      });
     } else {
       return rejectBack();
     }
@@ -371,6 +365,21 @@ export class Parser<T> {
 }
 
 // debug code
+
+function elemContext<T>(array: SourceArray<T>, pos: number): string {
+  const strs = [];
+  for (let i = pos - 2; i < pos + 3; ++i) {
+    if (i >= 0 && i < array.size()) {
+      if (i === pos) {
+        strs.push(`<${array.display(array.elementAt(i))}>`);
+      } else {
+        strs.push(array.display(array.elementAt(i)));
+      }
+    }
+  }
+  return strs.join('');
+}
+
 function strMetaVal(meta: MetaVal): string {
   if (typeof meta === 'string') {
     return `"${meta}"`;
@@ -386,8 +395,24 @@ function strMetaVal(meta: MetaVal): string {
   }
 }
 
-function strResult<T>(res: MatchResult<T>): string {
-  return `{${res.accept ? 'ACCEPT' : 'REJECT'}|${Flow[res.flow]}|${JSON.stringify(res.return)}}`;
+function mergeSNode<T>(array: SourceArray<T>, node: SNode<T>): string {
+  if (node == null) {
+    return '';
+  }
+  const sl = [];
+  if (node.source) {
+    sl.push(array.display(node.source));
+  }
+  if (node.children) {
+    for (let ch of node.children) {
+      sl.push(mergeSNode(array, ch));
+    }
+  }
+  return sl.join('');
+}
+
+function strResult<T>(array: SourceArray<T>, res: MatchResult<T>): string {
+  return `{${res.accept ? 'ACCEPT' : 'REJECT'}|${Flow[res.flow]}|"${mergeSNode(array, res.return)}"}`;
 }
 
 function strNontermStack<T>(stack: Stack<T>[]) {

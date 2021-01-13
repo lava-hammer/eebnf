@@ -1,12 +1,12 @@
 ENTRY = { rule | comment };
 _ = {" " | "\t" | "\n"};
-comment = "//", {"\c"};
+comment = "/", "/", {"\c"};
 rule = _, name, _, "=", list, ";", _, [comment];
 name = "\a", { "\w" };
 list = item | ( { item, "," }, item );
 item = _, name | term | alter | option | repeat | group, _;
 term = "\"", "\S", {"\S"} ,"\"";
-group = "(", _, list, _, ")";
+group = "(", list, ")";
 alter = item, "|" , item;
-option = "[", _, list, _, "]";
-repeat = "{", _, list, _, "}";
+option = "[", list, "]";
+repeat = "{", list, "}";

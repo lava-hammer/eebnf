@@ -1,0 +1,8 @@
+ENTRY = {expr}
+_ = {" " | "\t" | "\n"};
+expr = _, variable, _, "=", _, value, _;
+variable = "\a", { "\w" };
+value = num | ( "(", operation, ")" );
+num = "\d", { "\d" };
+operation = _, value, _, op, _, value, _;
+op = "+" | "-" | "*" | "/";

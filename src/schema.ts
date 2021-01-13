@@ -14,21 +14,21 @@ export interface Meta {
 
 export type MetaVal = string | Meta;
 
-function A(label: string) {
+export function A(label: string) {
   return {
     type: MetaType.NONTERMINAL,
     value: label,
   };
 }
 
-function OR(...item: MetaVal[]): Meta {
+export function OR(...item: MetaVal[]): Meta {
   return {
     type: MetaType.ALTERNATION,
     value: item,
   };
 }
 
-function EX(...item: MetaVal[]): Meta {
+export function EX(...item: MetaVal[]): Meta {
   if (item.length > 1) {
     return {
       type: MetaType.OPTIONAL,
@@ -42,7 +42,7 @@ function EX(...item: MetaVal[]): Meta {
   }
 }
 
-function LOOP(...item: MetaVal[]): Meta {
+export function LOOP(...item: MetaVal[]): Meta {
   if (item.length > 1) {
     return {
       type: MetaType.REPETITION,
@@ -56,7 +56,7 @@ function LOOP(...item: MetaVal[]): Meta {
   }
 }
 
-function IN(...item: MetaVal[]): Meta {
+export function IN(...item: MetaVal[]): Meta {
   return {
     type: MetaType.GROUPING,
     value: item,
@@ -67,15 +67,15 @@ export type Schema = { [key: string]: Meta };
 
 export const eebnfSchema: Schema = {
   ENTRY: IN(LOOP(OR(A('rule'), A('comment')))),
-  _: LOOP(OR(' ', '\t', '\n')),
-  comment: IN('//', LOOP('\\N')),
+  _: LOOP(OR(' ', '\t')),
+  comment: IN('/', '/', LOOP('\\N')),
   rule: IN(A('_'), A('name'), A('_'), '=', A('list'), ';', A('_'), EX('comment')),
   name: IN('\\a', LOOP('\\w')),
   list: OR(A('item'), IN(LOOP(A('item'), ','), A('item'))),
   item: IN(A('_'), OR(A('name'), A('term'), A('group'), A('alter'), A('option'), A('repeat')), A('_')),
-  term: IN('\\"', '\\S', LOOP('\\S'), '\\"'),
-  group: IN("(", A('_'), A('list'), A('_'), ")"),
+  term: IN('"', '\\X', LOOP('\\X'), '"'),
+  group: IN("(", A('list'), ")"),
   alter: IN(A('item'), '|', A('item')),
-  option: IN('[', A('_'), A('list'), A('_'), ']'),
-  repeat: IN('{', A('_'), A('list'), A('_'), '}'),
+  option: IN('[', A('list'), ']'),
+  repeat: IN('{', A('list'), '}'),
 }

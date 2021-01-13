@@ -1,10 +1,12 @@
 import fs from 'fs';
+import { generateNFA, genState } from './nfa';
 import { Parser } from './parser';
+import { eebnfSchema } from './schema';
 import { StringArray } from './type';
 
 // main
 (function () {
-  const src = fs.readFileSync('test/bootstrap.ebnf', {
+  const src = fs.readFileSync('test/test1.ebnf', {
     encoding: 'utf-8'
   });
   const strArr = new StringArray(src);
@@ -15,4 +17,9 @@ import { StringArray } from './type';
   // fs.writeFileSync('test/out.rs', rsrc, {
   //   encoding: 'utf-8',
   // });
+
+  ///////////////
+
+  // const map = generateNFA(eebnfSchema);
+  // console.log(map);
 })();

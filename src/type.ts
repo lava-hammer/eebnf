@@ -2,7 +2,7 @@
 export interface SNode<T> {
   parent?: SNode<T>;
   label: string;
-  source?: T[];
+  source?: T;
   children?: SNode<T>[];
   posBegin?: string;
   posEnd?: string;
@@ -14,8 +14,7 @@ export interface AST<T> {
 }
 
 export abstract class SourceArray<T> {
-  abstract split(terminal: string): T[];
-  abstract match(char: T, elem: T): boolean;
+  abstract match(term: string, elem: T): boolean;
   abstract elementAt(pos: number): T;
   abstract size(): number;
   abstract position(pos: number): string;
@@ -26,6 +25,7 @@ const listA = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_';
 const listW = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_';
 const listD = '0123456789';
 const listS = '\f\n\r\t\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff';
+const listX = '"\f\n\r\t\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
 
 export class StringArray extends SourceArray<string> {
 
@@ -49,35 +49,13 @@ export class StringArray extends SourceArray<string> {
     return str.split(src).join(dst);
   }
 
-  split(terminal: string): string[] {
-    const ret: string[] = [];
-    for (let i=0; i<terminal.length; ++i) {
-      let ch = terminal[i];
-      if (ch === '\\' && i < terminal.length - 1) {
-        let next = terminal[i + 1];
-        switch (next) {
-          case '\\': {
-            ch = '\\';
-          } break;
-          case '"': {
-            ch = '"';
-          } break;
-          default: {
-            ch += next;
-          }
-        }
-        i++;
-      }
-      ret.push(ch);
-    }
-    return ret;
-  }
-
   match(term: string, elem: string): boolean {
     switch(term) {
       case '\\t': return elem === '\t';
       case '\\n': return elem === '\n';
       case '\\N': return elem !== '\n';
+      case '\\x': return listX.includes(elem);
+      case '\\X': return !listX.includes(elem);
       case '\\a': return listA.includes(elem);
       case '\\A': return !listA.includes(elem);
       case '\\w': return listW.includes(elem);
